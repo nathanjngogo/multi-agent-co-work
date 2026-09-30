@@ -1,0 +1,21 @@
+# ---- 构建依赖与产物（由 build.cmd 自动生成）----
+vendor/
+fonts/static/
+output/
+output_full/
+output_samples/
+output_m2check/
+render/
+
+# ---- 运行时/临时 ----
+__pycache__/
+*.pyc
+.dsh/
+.multica/
+AGENTS.md
+_*
+!.gitkeep
+
+# ---- 系统 ----
+Thumbs.db
+desktop.ini
