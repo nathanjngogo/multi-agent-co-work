@@ -65,8 +65,13 @@ class M2MergedPage(M2Page):
         return self.members[0]
 
     # -------------------------------------------------------------- 中栏
-    def draw_middle(self, sku, image_path, view="FRONT", caption=None):
-        """中栏：顶部标签 → 产品图（上移收窄）→ 图注 → 配置对比表。"""
+    def draw_middle(self, sku, image_path, view="FRONT", caption=None,
+                    images=None):
+        """中栏：顶部标签 → 产品图（上移收窄）→ 图注 → 配置对比表。
+
+        `images` 给定时走**同页多色网格**（P.16 CR208 六色一页），
+        配置对比表照旧保留在图注下方。
+        """
         # 顶部 FIG. 标签（与左栏品牌标签共基线）
         size = T.M["fig_size"]
         self.text_inkb(T.M["fig_x"], T.M["top_label_ink_bottom"], L("fig"),
@@ -78,7 +83,13 @@ class M2MergedPage(M2Page):
         box = MERGED["product_box"]
         img_cx = (T.MID_X0 + T.MID_X1) / 2.0
         cy = MERGED["product_cy"]
-        if image_path and os.path.exists(image_path):
+        if images and len(images) >= 2:
+            top = cy - box / 2.0
+            n_img, cols = self.draw_image_grid(images, T.MID_X0, T.MID_X1,
+                                               top, top + box)
+            self.notes.append(f"同页 {n_img} 张色款图（{cols} 列网格，"
+                              f"配置对比表保留、未新增页码）")
+        elif image_path and os.path.exists(image_path):
             self.image_fit_top(image_path, img_cx, cy, box, box)
         else:
             self.c.setStrokeColorRGB(*T.rgb(T.MUTED))
@@ -213,12 +224,12 @@ class M2MergedPage(M2Page):
 
     # -------------------------------------------------------------- 整页
     def render(self, members, image_path=None, view="FRONT", caption=None,
-               logo_path=None):
+               logo_path=None, images=None):
         """members = 同一「入册页组」的全部 v6 行（有序）。"""
         self.members = list(members)
         sku = self.rep()
         self.draw_red_rule()
         self.draw_left(sku, view)
-        self.draw_middle(sku, image_path, view, caption)
+        self.draw_middle(sku, image_path, view, caption, images=images)
         self.draw_right(sku, logo_path)
         return self.notes

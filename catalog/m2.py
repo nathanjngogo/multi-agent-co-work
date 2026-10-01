@@ -130,7 +130,45 @@ class M2Page(Page):
                                   M["sell_rule_w"])
 
     # -------------------------------------------------------------- 中栏
-    def draw_middle(self, sku, image_path, view="FRONT", caption=None):
+    def draw_image_grid(self, images, x0, x1, y_top, y_bottom):
+        """同页多图（色款一览）：在给定图区内按网格摆放 N 张实物图。
+
+        `images` = [(绝对路径, 色款标签或 None), ...]，顺序即版面从左到右、
+        自上而下的次序。列数 = min(3, N)；每格按"框内等比"摆放
+        （沿用 `image_fit_top` 的原生比例口径），有标签的格子在格顶留出
+        标签带并居中写色款名（muted，M3 两栏小标签同档字重）。
+        **不新增页码**：只是把同一页的图位切成 N 格。
+        """
+        M = T.M
+        n = len(images)
+        if n < 2:
+            return 0, 0
+        cols = min(3, n)
+        rows = (n + cols - 1) // cols
+        band = M["multi_label_band"] if any(lbl for _p, lbl in images) else 0.0
+        gw = (x1 - x0) / cols
+        gh = (y_bottom - y_top) / rows
+        for i, (path, label) in enumerate(images):
+            r, c = divmod(i, cols)
+            cx = x0 + gw * (c + 0.5)
+            cell_top = y_top + gh * r
+            if label:
+                lm = ink_mm(F_CN_MED, M["multi_label_size"], label)
+                self.text_centered(cx, cell_top + M["multi_gap_y"] + band
+                                   - 1.0,
+                                   label, F_CN_MED, M["multi_label_size"],
+                                   T.MUTED)
+            if not (path and os.path.exists(path)):
+                self.notes.append(f"色款图缺失：{os.path.basename(path or '?')}")
+                continue
+            self.image_fit_top(path, cx,
+                               cell_top + band + gh / 2.0,
+                               gw - 2 * M["multi_gap_x"],
+                               gh - band - 2 * M["multi_gap_y"])
+        return n, cols
+
+    def draw_middle(self, sku, image_path, view="FRONT", caption=None,
+                    images=None):
         M = T.M
         # ---- 顶部 FIG. 标签（与左栏品牌标签共基线 §四.3）----
         # 字重 Medium：属"拉丁小标签"档（规范 §1.2）
@@ -143,7 +181,14 @@ class M2Page(Page):
         # ---- 产品图：中栏居中，垂直居中偏上（印刷宽 ≥100mm §二 M2）----
         box = M["product_box"]
         img_cx = (T.MID_X0 + T.MID_X1) / 2.0
-        if image_path and os.path.exists(image_path):
+        if images and len(images) >= 2:
+            # 同页多色：不新增页码，图位切格
+            top = M["product_cy"] - box / 2.0
+            n_img, cols = self.draw_image_grid(images, T.MID_X0, T.MID_X1,
+                                               top, top + box)
+            self.notes.append(f"同页 {n_img} 张色款图（{cols} 列网格，"
+                              f"未新增页码）")
+        elif image_path and os.path.exists(image_path):
             # 打样实测：产品图按栏宽 120mm 内"宽优先"填满（A7 高 101.7mm > 100mm）
             self.image_fit_top(image_path, img_cx, M["product_cy"], box, box)
         else:
@@ -301,9 +346,9 @@ class M2Page(Page):
 
     # -------------------------------------------------------------- 整页
     def render(self, sku, image_path, view="FRONT", caption=None,
-               logo_path=None):
+               logo_path=None, images=None):
         self.draw_red_rule()
         self.draw_left(sku, view)
-        self.draw_middle(sku, image_path, view, caption)
+        self.draw_middle(sku, image_path, view, caption, images=images)
         self.draw_right(sku, logo_path)
         return self.notes

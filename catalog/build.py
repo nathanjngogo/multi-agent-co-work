@@ -223,6 +223,33 @@ def resolve_image(model, root=ROOT, sku=None):
     return None, view
 
 
+# 同页多色（v3 · 江楠 2026-09-30 指令）：**不新增 slide**，把该页图位切格。
+# 色款名 = 2026-10-01 逐张视觉复核结论（工单里的初判有 4 张不符，已按复核改）：
+#   2d375e0d 红机身／664b7f4a 黑·铜／f3395f40 黑·蓝／fee4424e 黑·紫／
+#   a5e6cbdc 黑·红／fb520ac9 白；J1D 黑／白与江楠指认一致。
+# 源件与 SHA-256 见 assets/multi/README.md。
+MULTI_MAIN = {
+    "J1D": [("assets/multi/J1D-black.png", "黑"),
+            ("assets/multi/J1D-white.jpeg", "白")],
+    "CR208": [("assets/multi/CR208_2d375e0d_600.png", "红"),
+              ("assets/multi/CR208_664b7f4a_960.png", "黑·铜"),
+              ("assets/multi/CR208_f3395f40_960.png", "黑·蓝"),
+              ("assets/multi/CR208_fee4424e_960.png", "黑·紫"),
+              ("assets/multi/CR208_a5e6cbdc_800.png", "黑·红"),
+              ("assets/multi/CR208_fb520ac9_800.png", "白")],
+}
+
+
+def resolve_multi(model, root=ROOT):
+    """同页多色图列表 [(绝对路径, 色款标签), ...]；无则空表。"""
+    out = []
+    for rel, label in MULTI_MAIN.get(model, ()):
+        p = os.path.join(root, rel)
+        if os.path.exists(p):
+            out.append((p, label))
+    return out
+
+
 def resolve_variant_image(model, color):
     """双色对比页某一列的主图：返回 (路径或 None, 视图标签)。
 
@@ -292,13 +319,16 @@ def _render_into(c, e, v):
         sku = e.rows[0]
         img, view = resolve_image(sku.model, sku=sku)
         return M2Page(c, e.index, bleed=bleed,
-                      optimize_images=v["optimize"]).render(sku, img, view=view)
+                      optimize_images=v["optimize"]).render(
+                          sku, img, view=view,
+                          images=resolve_multi(sku.model) or None)
     if e.kind == PM.M2_MERGED:
         sku = e.rows[0]
         img, view = resolve_image(sku.model, sku=sku)
         return M2MergedPage(c, e.index, bleed=bleed,
                             optimize_images=v["optimize"]).render(
-                                e.rows, img, view=view)
+                                e.rows, img, view=view,
+                                images=resolve_multi(sku.model) or None)
     if e.kind == PM.M3:
         a, b = e.rows
         colors = getattr(e, "colors", None)
