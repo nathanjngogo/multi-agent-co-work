@@ -139,7 +139,7 @@ class M4Page(Page):
             self.draw_cert_system()
             self.draw_oem_capability(from_y=M["oem_h3_ink_top"])
         elif self.variant == "service":
-            self.draw_service_table()
+            self.draw_logistics_map()
         elif self.variant == "index":
             self.draw_index_content()
         return y
@@ -247,47 +247,19 @@ class M4Page(Page):
             f"目录索引 {n} 条单列（页码升序，行高 {row_h:.2f}mm，"
             f"末行墨迹下沿 {M['idx_top'] + n * row_h:.1f}mm 贴合内容）")
 
-    # ---- 服务与物流页主体：装箱规格表（复用 M3 表规范）----
-    def draw_service_table(self):
-        """按品类列出装箱规格 —— 数值全部取 v6 实测列。"""
-        M = T.MT["m4"]
-        m3 = T.MT["m3"]
-        x0, x1 = m3["content_x0"], m3["content_x1"]
-        c0 = M["tbl_col0_w"]
-        col_w = (x1 - x0 - c0) / 3.0
-        y = M["tbl_top"]
+    # ---- 服务与物流页主体：矢量物流地图（v3：撤箱规表）----
+    def draw_logistics_map(self):
+        """航线示意：矢量世界地图 + China 高亮 + 三条航线 + 起运/目的港。
 
-        # 表头（8.5pt Semibold + 0.4mm 下框，§二 M3 表规范）
-        hsize = m3["table_head_size"]
-        for i, htxt in enumerate(("品类", "外箱尺寸", "每箱数量", "单箱毛重")):
-            xx = x0 if i == 0 else x0 + c0 + (i - 1) * col_w
-            self.text_inkb(xx, y + 3.0, htxt, F_CN_SB, hsize, T.INK)
-        y += 6.0
-        self.hairline_top(x0, y, x1 - x0, color=T.INK, lw_mm=T.TABLE_HEAD_W)
+        **撤表口径**（MARS-12 v3）：本页不再列箱规表——箱规属"下单前按规格
+        书确认"的商业条款，画册页改为讲**交付能力**（起运地 → 三大市场）。
 
-        # 每个品类取一个代表 SKU（v6 首见行），箱规只用该行实测值
-        seen, reps = set(), []
-        for s in self.rows:
-            if s.category in seen:
-                continue
-            seen.add(s.category)
-            reps.append(s)
-        csize = m3["table_cell_size"]
-        for s in reps:
-            rh = m3["table_row_h"]
-            ink_bottom = y + rh / 2.0 + 1.55
-            self.text_inkb(x0, ink_bottom, s.category, F_CN_REG, csize, T.INK)
-            cells = [s.carton_display(), s.per_carton_display(),
-                     s.gross_weight_display()]
-            for i, (val, missing) in enumerate(cells):
-                xx = x0 + c0 + i * col_w
-                self.draw_mixed(xx, ink_bottom, val, latin_font=F_LATIN_REG,
-                                cn_font=F_CN_REG, size=csize,
-                                color=T.MUTED if missing else T.BODY,
-                                max_w=col_w - 2.0)
-            y += rh
-            self.hairline_top(x0, y, x1 - x0)
-        self.notes.append(f"服务与物流表 {len(reps)} 个品类（数据取 v6 箱规列）")
+        地图是**矢量描线**（`catalog/geo.py`）：本页位图数保持 2（右栏两个
+        品牌 logo），贴位图会破坏"逐页位图数"判据，印刷版也会丢边缘锐度。
+        投影与叠层锚点全部对齐已批准基线实测值。
+        """
+        from . import geo
+        self.notes.append(geo.draw(self))
 
     # -------------------------------------------------------------- 右栏
     def right_blocks(self):
