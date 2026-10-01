@@ -42,6 +42,8 @@ M4_VARIANTS = (M4_INDEX, M4_BRAND, M4_CERT, M4_SERVICE)
 #   M2                     : 型号（v6「型号」列；独立单品页）
 #   M2-MERGED              : 页组键（v6「入册页组」组名，如 "CR208" / "AW-2"）
 #   M3                     : (型号A, 型号B) —— 两两对比，顺序即版面左右
+#                            或 ((型号, 色号), (型号, 色号)) —— **同型号双色对比页**
+#                            （v3：P.08 A7 红/A7 蓝、P.14 P16 绿/P16 紫）
 #
 # **页码不在此声明** —— 由 build_page_map() 按顺序生成 P.01 起。
 PAGE_MAP = [
@@ -52,13 +54,13 @@ PAGE_MAP = [
     (M4_SERVICE, None),                    # P.05  服务与物流
     (M2, "A7"),                            # P.06
     (M2, "LP005-White"),                   # P.07
-    (M3, ("A7", "LP005-White")),           # P.08
+    (M3, (("A7", "红"), ("A7", "蓝"))),     # P.08  同型号双色（v3：原 A7·LP005 对比）
     (M2, "P11"),                           # P.09
     (M2, "P12"),                           # P.10
     (M3, ("P11", "P12")),                  # P.11
     (M2, "P16"),                           # P.12  （V12 = 型号 P16，数据表型号列为准）
     (M2, "V16"),                           # P.13
-    (M3, ("P16", "V16")),                  # P.14  （工单写 V12·V16）
+    (M3, (("P16", "绿"), ("P16", "紫"))),   # P.14  同型号双色（v3：原 P16·V16 对比）
     (M2, "J1D"),                           # P.15
     (M2_MERGED, "CR208"),                  # P.16  有刷/无刷 + 配置对比表
     (M2_MERGED, "AW-2"),                   # P.17  四配置 + 配置对比表
@@ -86,15 +88,18 @@ EXPECTED_ROWS = 23
 class PageEntry:
     """一页的完整描述：页型、页码、数据、以及该页消费的 v6 行。"""
 
-    __slots__ = ("index", "kind", "param", "models", "rows", "page_key")
+    __slots__ = ("index", "kind", "param", "models", "rows", "page_key",
+                 "colors")
 
-    def __init__(self, index, kind, param, models, rows, page_key=None):
+    def __init__(self, index, kind, param, models, rows, page_key=None,
+                 colors=None):
         self.index = index              # 1-based 页序号
         self.kind = kind
         self.param = param
         self.models = models            # 该页涉及的型号（有序）
         self.rows = rows                # 该页涉及的 Sku 对象（有序）
         self.page_key = page_key        # 页组键（合并页用），否则 None
+        self.colors = colors            # 双色对比页的色号对 (A, B)，否则 None
 
     @property
     def page_no(self):
@@ -134,6 +139,17 @@ def _sort_by_config_tag(members):
     return sorted(members, key=key)
 
 
+def _side(spec):
+    """M3 一侧的规格：`型号` 或 `(型号, 色号)` → (型号, 色号 或 None)。
+
+    色号形态用于**同型号双色对比页**（v3：P.08 A7 红/蓝、P.14 P16 绿/紫）——
+    两侧是同一个 SPU 的两个颜色，版面按"型号 色号"显示。
+    """
+    if isinstance(spec, (tuple, list)):
+        return (spec[0], spec[1])
+    return (spec, None)
+
+
 def build_page_map(rows=None, page_map=None):
     """把构成表 + v6 数据展开成 32 个 PageEntry（页码 P.01 起，连续）。
 
@@ -170,15 +186,27 @@ def build_page_map(rows=None, page_map=None):
                     seen.append(s.model)
             models = seen
         elif kind == M3:
-            a, b = param
-            sa, sb = by_model.get(a), by_model.get(b)
+            a, b = _side(param[0]), _side(param[1])
+            sa, sb = by_model.get(a[0]), by_model.get(b[0])
             if sa is None or sb is None:
-                missing = a if sa is None else b
+                missing = a[0] if sa is None else b[0]
                 raise KeyError(f"对比页要求 {missing!r}，但 v6 清单里没有该型号")
             # 登记对比伙伴：compare_rows() 按"两方交集"决定出行字段
             sa.set_pair_partner(sb)
             sb.set_pair_partner(sa)
-            models, page_rows = [sa.model, sb.model], [sa, sb]
+            if a[1] and b[1]:
+                # 同型号双色对比页：两列同一 SPU、不同色号（v3 口径）
+                if a[1] == b[1]:
+                    raise KeyError(f"双色对比页两侧色号相同：{a[0]} {a[1]}")
+                colors = (a[1], b[1])
+                models = [sa.model]      # 型号去重 —— 索引页仍指向单品页
+            else:
+                colors = None
+                models = [sa.model, sb.model]
+            page_rows = [sa, sb]
+            out.append(PageEntry(i, kind, param, models, page_rows, key,
+                                 colors=colors))
+            continue
         out.append(PageEntry(i, kind, param, models, page_rows, key))
     return out
 
@@ -284,7 +312,11 @@ def validate(entries, rows=None):
                 problems.append(f"{e.page_no} 对比页引用了无单品页的 {s.model}")
         if len(e.rows) != 2:
             problems.append(f"{e.page_no} 对比页不是两两对比（{len(e.rows)} 方）")
-        if e.rows[0].model == e.rows[1].model:
+        if getattr(e, "colors", None):
+            # 同型号双色对比页：两侧型号相同是预期，改断"色号互异"
+            if e.colors[0] == e.colors[1] or not all(e.colors):
+                problems.append(f"{e.page_no} 双色对比页色号无效：{e.colors}")
+        elif e.rows[0].model == e.rows[1].model:
             problems.append(f"{e.page_no} 对比页两侧型号相同")
 
     # 页型配比（工单裁决：M1×2 + M4×4 + M2×19 + M3×7）

@@ -17,6 +17,10 @@ HAIR = (0xD6, 0xD6, 0xD6)    # 细分隔线
 ACCENT = (0xE4, 0x37, 0x1F)  # 版式强调色：红竖线、编号、标签、POWER 标签
 BRAND_ORANGE = (0xF0, 0x73, 0x21)  # 仅限 Hearten Logo 本体
 WHITE = (0xFF, 0xFF, 0xFF)
+# 同型号双色对比页（M3 变体页）的色款色带色：MARS-17 D3 生产件定稿 #6E4C9F
+VARIANT_PURPLE = (0x6E, 0x4C, 0x9F)
+# 地图底纹红（China 高亮填充 = ACCENT 35% 白底混合，实测值）
+MAP_LAND_FILL = (0xF3, 0xB9, 0xB0)
 
 def rgb(t, alpha=1.0):
     """token 元组 → ReportLab 归一化 RGB。"""

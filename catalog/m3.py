@@ -21,6 +21,7 @@
 标注口径画虚线框 + "待补产品主图"，接图后由 build 传入真实路径即可切换。
 """
 import os
+import re
 
 from reportlab.lib.units import mm
 
@@ -35,6 +36,14 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 ASSETS = os.path.join(ROOT, "assets")
 
+# 带 CJK 的版面串（同型号双色对比页的「型号 色号」）绝不能塞进拉丁字体：
+# ReportLab 会用 .notdef 顶替，页面上留一个空洞（提取文本里变成 U+0000）。
+_CJK = re.compile(r"[\u2e80-\u9fff\u3000-\u303f\uff00-\uffef]")
+
+
+def _has_cjk(s):
+    return bool(_CJK.search(s or ""))
+
 
 class M3Page(Page):
     """渲染一个 SKU 对的 M3 系列/对比页（两两对比）。"""
@@ -44,21 +53,35 @@ class M3Page(Page):
                          optimize_images=optimize_images)
 
     # -------------------------------------------------------------- 左栏
-    def draw_left(self, a, b, lead=""):
+    def _model_metrics(self, model, size):
+        """型号大字的量测：纯拉丁走 ink_mm，带色号（CJK）走混排宽度。"""
+        if _has_cjk(model):
+            return {"w": self.mix_width(model, F_LATIN_HEAVY, F_CN_SB, size)}
+        return ink_mm(F_LATIN_HEAVY, size, model)
+
+    def draw_left(self, a, b, lead="", ma=None, mb=None):
         M = T.MT["m3"]
         left = a  # 左栏信息以**左侧机型**为主（规范：两机型并排，左栏讲系列）
 
         self.draw_brand_tag(left.brand_label(), M["brand_view"])
 
         # 型号大字（与 M2 同档；长型号按 §五 缩字号）
-        model = left.model
+        # `ma` = 版面显示名（同型号双色对比页是「A7 红」这类带色号的名字）；
+        # 缺省即型号本身，单型号对比页的行为一字不变。
+        model = ma or left.model
         size = M["model_size"]
-        m = ink_mm(F_LATIN_HEAVY, size, model)
+        m = self._model_metrics(model, size)
         while m and m["w"] > T.LEFT_TEXT_W and size > 20.0:
             size -= 0.5
-            m = ink_mm(F_LATIN_HEAVY, size, model)
-        self.text_inkb(10.92, M["model_ink_bottom"], model, F_LATIN_HEAVY,
-                       size, T.INK)
+            m = self._model_metrics(model, size)
+        if _has_cjk(model):
+            # 色号是 CJK：必须走中拉丁混排（拉丁字体画 CJK 会留缺字形空洞）
+            self.draw_mixed(10.92, M["model_ink_bottom"], model,
+                            latin_font=F_LATIN_HEAVY, cn_font=F_CN_SB,
+                            size=size, color=T.INK)
+        else:
+            self.text_inkb(10.92, M["model_ink_bottom"], model, F_LATIN_HEAVY,
+                           size, T.INK)
 
         # 中文品名（h2 15pt；超出左栏宽则按 §五 缩到 13pt）
         name = D.cjk_latin_space(self._family_name(left, b))
@@ -84,7 +107,7 @@ class M3Page(Page):
                                 M["lead_max_w"], M["lead_line_h"], max_lines=5)
 
         # 底部：两个版本功率对照（竖排两组）
-        self.draw_power_compare(a, b)
+        self.draw_power_compare(a, b, ma, mb)
 
     def _family_name(self, a, b):
         """系列页的中文品名：两机型同品类时取品类名，否则并列。
@@ -111,7 +134,7 @@ class M3Page(Page):
         # 非电器或无电机字段：退化为"厚度/规格"差异副标则留空（不编造）
         return ""
 
-    def draw_power_compare(self, a, b):
+    def draw_power_compare(self, a, b, ma=None, mb=None):
         """底部两个版本对照（竖排）：标签 + 大数值 + 右侧副信息。
 
         打样实测：组 1 标签顶 130.54、数值顶 136.31、组间距 22.15；
@@ -126,6 +149,7 @@ class M3Page(Page):
         M = T.MT["m3"]
         for i, sku in enumerate((a, b)):
             dy = i * M["cmp_pitch"]
+            disp = (ma, mb)[i] or sku.model
             # 标签：电器 = 电机类型；非电器 = 主参数名（厚度），均 v6 原文
             if sku.is_electric:
                 label, _ = sku.motor_type()
@@ -141,7 +165,7 @@ class M3Page(Page):
                 shown = val
             # 型号与标签混排 —— 标签是 CJK，整串塞进拉丁字体会出豆腐块。
             self.draw_mixed(11.08, M["cmp1_label_top"] + dy + 2.77,
-                            f"{sku.model} · {label}", latin_font=F_LATIN_MED,
+                            f"{disp} · {label}", latin_font=F_LATIN_MED,
                             cn_font=F_CN_REG, size=M["cmp_label_size"],
                             color=T.MUTED, tracking=M["cmp_label_track"])
 
@@ -167,34 +191,90 @@ class M3Page(Page):
 
     # -------------------------------------------------------------- 右内容区
     def draw_pair(self, a, b, img_a=None, img_b=None, view_a="FRONT",
-                  view_b="SIDE"):
+                  view_b="SIDE", model_a=None, model_b=None, var_a=None,
+                  var_b=None):
         """上排两机型并排：各占半栏宽（60mm），图框 80mm 高。
 
         每半栏顶部一个共基线小标签（`MODEL / VIEW`），标签在框外上方。
+
+        `model_a/model_b` 为版面显示名（同型号双色对比页的「A7 红」），
+        `var_a/var_b` 为该列色号：有图走实物，无图走 **D3 色款占位件**
+        （虚线框 + 顶部色款色带 + 两行标签），而不是通用缺口占位。
         """
         M = T.MT["m3"]
         box_w = M["half_w"]
         box_h = M["img_bottom"] - M["img_top"]
         cy = M["img_top"] + box_h / 2.0
-        for i, (sku, img, view) in enumerate(((a, img_a, view_a),
-                                              (b, img_b, view_b))):
+        for i, (sku, img, view, disp, var) in enumerate((
+                (a, img_a, view_a, model_a or a.model, var_a),
+                (b, img_b, view_b, model_b or b.model, var_b))):
             cx = M["half_x0"] + M["half_w"] * (i + 0.5)
+            x0 = cx - M["half_w"] / 2.0 + 0.46
             # 顶部标签（共基线）
-            lm = ink_mm(F_LATIN_MED, 7.46, sku.model, T.TRACK_LABEL)
-            self.text_inkleft(cx - M["half_w"] / 2.0 + 0.46,
-                              M["half_label_top"] + 3.0, sku.model,
-                              F_LATIN_MED, 7.46, T.INK, T.TRACK_LABEL)
-            tag_x = cx - M["half_w"] / 2.0 + 0.46 + (lm["w"] if lm else 12.0) + 6.0
+            if _has_cjk(disp):
+                w = self.mix_width(disp, F_LATIN_MED, F_CN_REG, 7.46,
+                                   T.TRACK_LABEL)
+                self.draw_mixed(x0, M["half_label_top"] + 3.0, disp,
+                                latin_font=F_LATIN_MED, cn_font=F_CN_REG,
+                                size=7.46, color=T.INK,
+                                tracking=T.TRACK_LABEL)
+            else:
+                lm = ink_mm(F_LATIN_MED, 7.46, disp, T.TRACK_LABEL)
+                self.text_inkleft(x0, M["half_label_top"] + 3.0, disp,
+                                  F_LATIN_MED, 7.46, T.INK, T.TRACK_LABEL)
+                w = lm["w"] if lm else 12.0
+            tag_x = x0 + w + 6.0
             self.text_inkb(tag_x, M["half_label_top"] + 3.0, f"/ {view}",
                            F_LATIN_MED, 7.46, T.MUTED, T.TRACK_LABEL)
 
             # 图（占位或实物）
             if img and os.path.exists(img):
                 self.image_fit_top(img, cx, cy, box_w, box_h)
+            elif var:
+                self.draw_variant_placeholder(cx, cy, box_w, box_h,
+                                              f"{sku.model}-{var}",
+                                              f"{var}款")
+                self.notes.append(f"{sku.model}-{var} 主图缺失，"
+                                  f"已按 D3 色款占位件标注")
             else:
                 self.draw_placeholder(cx, cy, box_w, box_h,
                                       f"待补产品主图 {sku.model}")
                 self.notes.append(f"{sku.model} 主图缺失，已按缺口标注占位")
+
+    def draw_variant_placeholder(self, cx, cy, w, h, label, tag):
+        """D3 色款占位件（MARS-17）：虚线框 + 顶部色款色带 + 两行标签。
+
+        色带 4mm 满框宽（token 紫 VARIANT_PURPLE）；色款名白字右对齐、
+        距右沿 3mm、**垂直居中于色带**；标签两行居中于框心下方
+        （「待补产品主图」muted 9.5pt + 「P16-紫」ink 15pt 中拉丁混排）。
+        """
+        x0, y0 = cx - w / 2.0, cy - h / 2.0
+        band_h = 4.0
+        # 虚线框：0.25mm（HAIR_W），等长虚线 3/3pt
+        self.c.setStrokeColorRGB(*T.rgb(T.MUTED))
+        self.c.setLineWidth(T.HAIR_W * mm)
+        self.c.setDash(3, 3)
+        self.c.rect(self.X(x0), self.Y(y0 + h), w * mm, h * mm,
+                    stroke=1, fill=0)
+        self.c.setDash()
+        # 色款色带（顶部，满框宽）
+        self.c.setFillColorRGB(*T.rgb(T.VARIANT_PURPLE))
+        self.c.rect(self.X(x0), self.Y(y0 + band_h), w * mm, band_h * mm,
+                    stroke=0, fill=1)
+        # 色款名（白字，右对齐，垂直居中于色带）
+        tm = ink_mm(F_CN_MED, 7.5, tag)
+        th = (tm["above"] + tm["below"]) if tm else 2.65
+        self.text_right(x0 + w - 3.0, y0 + band_h / 2.0 + th / 2.0,
+                        tag, F_CN_MED, 7.5, T.WHITE)
+        # 两行标签（居中于框心下方，与 MARS-17 生产件同位）
+        lm = ink_mm(F_CN_REG, 9.5, "待补产品主图")
+        h1 = (lm["above"] + lm["below"]) if lm else 3.35
+        self.text_centered(cx, cy - 6.16 + h1 / 2.0, "待补产品主图",
+                           F_CN_REG, 9.5, T.MUTED)
+        mm2 = ink_mm(F_CN_SB, 15.0, label)
+        h2 = (mm2["above"] + mm2["below"]) if mm2 else 5.29
+        self.draw_mixed_centered(cx, cy + 0.13 + h2 / 2.0, label,
+                                 F_LATIN_MED, F_CN_SB, 15.0, T.INK)
 
     def draw_placeholder(self, cx, cy, w, h, label):
         """素材缺口占位：虚线框 + muted 标注（与 M2 缺口口径一致）。"""
@@ -207,7 +287,7 @@ class M3Page(Page):
         self.text_centered(cx, cy, label, F_CN_REG, 9.5, T.MUTED)
 
     # -------------------------------------------------------------- 对比表
-    def draw_table(self, a, b, rows=None):
+    def draw_table(self, a, b, rows=None, headers=None):
         """对比表（规范 §二 M3 逐条落实）。
 
         列布局：首列行标签 36mm（114→150），数据列两列等宽（150→192→234）。
@@ -225,7 +305,8 @@ class M3Page(Page):
         hsize = M["table_head_size"]
         self.text_inkb(x0, M["table_head_top"] + 3.0, "项目", F_CN_SB, hsize,
                        T.INK)
-        headers = [self._col_header(a), self._col_header(b)]
+        if headers is None:
+            headers = [self._col_header(a), self._col_header(b)]
         for i, htxt in enumerate(headers):
             self.text_inkb(x0 + c0 + i * col_w,
                            M["table_head_top"] + 3.0, htxt, F_CN_SB, hsize,
@@ -299,10 +380,14 @@ class M3Page(Page):
 
     # -------------------------------------------------------------- 整页
     def render(self, a, b, lead="", img_a=None, img_b=None,
-               view_a="FRONT", view_b="SIDE", rows=None):
+               view_a="FRONT", view_b="SIDE", rows=None, model_a=None,
+               model_b=None, var_a=None, var_b=None):
         self.draw_red_rule()
-        self.draw_left(a, b, lead)
-        self.draw_pair(a, b, img_a, img_b, view_a, view_b)
-        self.draw_table(a, b, rows)
+        self.draw_left(a, b, lead, model_a, model_b)
+        self.draw_pair(a, b, img_a, img_b, view_a, view_b, model_a, model_b,
+                       var_a, var_b)
+        headers = ([model_a or a.model, model_b or b.model]
+                   if (model_a or model_b) else None)
+        self.draw_table(a, b, rows, headers)
         self.draw_footer()
         return self.notes

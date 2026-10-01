@@ -166,6 +166,16 @@ PICKED_MAIN = {
     "LEST-C2": "dce649003ec54edcb79ea6a91f064778.png",    # C 级（占位，不入册）
 }
 
+# 同型号双色对比页（M3 变体页）每色的主图：`(型号, 色号) → 图库文件名`。
+# 依据：v3 口径（P.08 A7 红/蓝、P.14 P16 绿/紫）＋ MARS-14-D2 的 a7_src_file
+# （图库 XCQ-A7 下另一张即蓝款）；None = 该色无图 → 走 D3 色款占位件。
+VARIANT_MAIN = {
+    ("A7", "红"): "c1a962916ac839b12998ef61fcdf41e.png",
+    ("A7", "蓝"): "18c4191daf2773e68db0794a6e42d80 - 副本.png",
+    ("P16", "绿"): "AMAZON-P16-US-P0-1.jpg",
+    ("P16", "紫"): None,
+}
+
 # 目录名陷阱（工单 §输入口径 1）：SPU 编码 → 图库实际目录名
 _DIR_ALIAS = {
     "XCQ-AW-2": "AW-02-1",          # 基础配置目录名不同
@@ -213,15 +223,33 @@ def resolve_image(model, root=ROOT, sku=None):
     return None, view
 
 
+def resolve_variant_image(model, color):
+    """双色对比页某一列的主图：返回 (路径或 None, 视图标签)。
+
+    无图（如 P16 紫款）返回 None —— 版面走 MARS-17 D3 色款占位件，
+    与"图库缺图"同一口径：不静默拿别的图顶替。
+    """
+    view = SKU_IMAGES.get(model, (None, "FRONT"))[1]
+    fname = VARIANT_MAIN.get((model, color))
+    if fname:
+        p = _find_in_gallery(fname)
+        if p:
+            return p, view
+    return None, view
+
+
 # ---------------------------------------------------------------- 全页上下文
 # M4 需要 v6 全表与页序引擎成果；渲染分发前一次性注入。
 ENTRY_CONTEXT = {}
 
 
-def _m3_lead(a, b):
-    """M3 引导句：只用 v6 已有字段陈述事实，不编造卖点。"""
+def _m3_lead(a, b, ma=None, mb=None):
+    """M3 引导句：只用 v6 已有字段陈述事实，不编造卖点。
+
+    `ma/mb` 是版面显示名（同型号双色对比页为「A7 红」/「A7 蓝」）。
+    """
     cat = a.category if a.category == b.category else f"{a.category} 与 {b.category}"
-    return (f"{cat}在售矩阵：{a.model} 与 {b.model} 两个版本并排，"
+    return (f"{cat}在售矩阵：{ma or a.model} 与 {mb or b.model} 两个版本并排，"
             f"参数对比见下表。")
 
 
@@ -273,12 +301,23 @@ def _render_into(c, e, v):
                                 e.rows, img, view=view)
     if e.kind == PM.M3:
         a, b = e.rows
-        ia, va = resolve_image(a.model, sku=a)
-        ib, vb = resolve_image(b.model, sku=b)
+        colors = getattr(e, "colors", None)
+        if colors:
+            # 同型号双色对比页：两列同一 SPU，按色号取图 / 显示「型号 色号」
+            ma, mb = f"{a.model} {colors[0]}", f"{b.model} {colors[1]}"
+            ia, va = resolve_variant_image(a.model, colors[0])
+            ib, vb = resolve_variant_image(b.model, colors[1])
+        else:
+            ma = mb = None
+            ia, va = resolve_image(a.model, sku=a)
+            ib, vb = resolve_image(b.model, sku=b)
         return M3Page(c, e.index, bleed=bleed,
                       optimize_images=v["optimize"]).render(
-                          a, b, lead=_m3_lead(a, b),
-                          img_a=ia, img_b=ib, view_a=va, view_b=vb)
+                          a, b, lead=_m3_lead(a, b, ma, mb),
+                          img_a=ia, img_b=ib, view_a=va, view_b=vb,
+                          model_a=ma, model_b=mb,
+                          var_a=colors[0] if colors else None,
+                          var_b=colors[1] if colors else None)
     variant = {PM.M4_INDEX: "index", PM.M4_BRAND: "brand",
                PM.M4_CERT: "cert", PM.M4_SERVICE: "service"}[e.kind]
     return M4Page(c, e.index, bleed=bleed, optimize_images=v["optimize"],
