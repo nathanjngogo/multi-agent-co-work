@@ -270,43 +270,49 @@ class M2Page(Page):
         val, unit = sku.power_display()
         # 黑块标签（accent）：电器=功率 / 非电器=该品类头号主参数
         blk_label = sku.hero_black_label()
+        # 2026-10-02 江楠「每个标识都居中并放大到合适的大小」（MARS-23 六轮）：
+        # 黑块整组 **水平居中 + 垂直居中**（左对齐阶梯式排布是打样遗留，
+        # 黑块是通栏实心矩形，靠左上视觉失衡）；数值 26pt、单位 11pt、
+        # 标签 9pt —— 数值与单位作为一组量宽居中。
+        blk_cx = T.RIGHT_COL_X + T.RIGHT_COL_W / 2.0
+        blk_max_w = T.RIGHT_COL_W - 2 * pad
         if LABELS_CN:
-            self.text_inkc(T.RIGHT_COL_X + pad, M["blk_label_cy"], blk_label,
-                           F_CN_REG,
-                           solve_size(F_CN_REG, blk_label, 5.20, 0.0,
-                                      lo=6.0, hi=9.0), T.ACCENT)
+            self.text_centered(blk_cx, 20.0, blk_label, F_CN_REG,
+                               solve_size(F_CN_REG, blk_label, 5.20, 0.0,
+                                          lo=6.0, hi=9.0), T.ACCENT)
         else:
             # 拉丁标签模式：非电器品类的标签是中文词（如"厚度"），只能走黑体；
             # 电器品类保留 POWER 拉丁标签（字重 Medium，属小标签档）。
             if sku.is_electric:
-                self.text_inkc(T.RIGHT_COL_X + pad, M["blk_label_cy"],
-                               L("power"), F_LATIN_MED, 8.0, T.ACCENT,
-                               T.TRACK_LABEL)
+                self.text_centered(blk_cx, 20.0, L("power"), F_LATIN_MED,
+                                   9.0, T.ACCENT, T.TRACK_LABEL)
             else:
-                self.text_inkc(T.RIGHT_COL_X + pad, M["blk_label_cy"],
-                               blk_label, F_CN_REG,
-                               solve_size(F_CN_REG, blk_label, 5.20, 0.0,
-                                          lo=6.0, hi=9.0), T.ACCENT)
+                self.text_centered(blk_cx, 20.0, blk_label, F_CN_REG,
+                                   solve_size(F_CN_REG, blk_label, 5.20, 0.0,
+                                              lo=6.0, hi=9.0), T.ACCENT)
 
-        # 数值（spec-num 20pt；超出右栏宽降至 16pt §五）
+        # 数值（放大档 26pt；超宽逐级降回 20pt 下限，§五 同规则）
         if val == D.MISSING:
-            self.text_inkc(T.RIGHT_COL_X + pad, M["blk_num_cy"],
-                           val, F_CN_REG, 16.0, T.MUTED)
+            self.text_inkc(blk_cx, 29.4, val, F_CN_REG, 18.0, T.MUTED)
         else:
-            size = 20.56
-            m = ink_mm(F_LATIN_HEAVY, size, val)
-            while m and m["w"] > T.RIGHT_COL_W - pad - 2.0 and size > 16.0:
-                size -= 0.5
-                m = ink_mm(F_LATIN_HEAVY, size, val)
-            self.text_inkb(T.RIGHT_COL_X + pad, M["blk_num_ink_bottom"], val,
-                           F_LATIN_HEAVY, size, T.WHITE)
+            nsize = 26.0
+            m = ink_mm(F_LATIN_HEAVY, nsize, val)
+            while m and m["w"] > blk_max_w and nsize > 20.0:
+                nsize -= 0.5
+                m = ink_mm(F_LATIN_HEAVY, nsize, val)
+            usize = 11.0
+            um = ink_mm(F_LATIN_MED, usize, unit) if unit else None
+            uw = ((um["w"] if um else 0.0) + M["blk_unit_gap"]) if unit else 0.0
+            vw = m["w"] if m else 0.0
+            while unit and (vw + uw) > blk_max_w and nsize > 20.0:
+                nsize -= 0.5
+                m = ink_mm(F_LATIN_HEAVY, nsize, val)
+                vw = m["w"] if m else 0.0
+            gx = blk_cx - (vw + uw) / 2.0
+            self.text_inkb(gx, 34.0, val, F_LATIN_HEAVY, nsize, T.WHITE)
             if unit:
-                # 单位紧贴数值墨迹右沿（打样实测：数值 248.67..259.08，
-                # 单位 260.52..263.36 —— 间隔 1.44mm）
-                # 字重 Medium：单位属小标签档
-                ux = T.RIGHT_COL_X + pad + (m["w"] if m else 0.0) + 1.44
-                self.text_inkc(ux, M["blk_unit_cy"], unit, F_LATIN_MED, 9.45,
-                               T.ACCENT)
+                self.text_inkb(gx + vw + M["blk_unit_gap"], 34.0, unit,
+                               F_LATIN_MED, usize, T.ACCENT)
 
         # ---- 白底格：2 个实测主参数 + 起订量 ----
         rows = list(sku.hero_white())
@@ -318,28 +324,38 @@ class M2Page(Page):
             self.hairline_top(T.RIGHT_COL_X, hair_y, self.RIGHT_BLEED_W)
             dy = i * M["cell_pitch"]
 
-            # 标签（muted 7.73pt）
-            self.text_inkc(T.RIGHT_COL_X + pad, M["cell_label_cy"] + dy,
-                           label, F_CN_REG, 7.73, T.MUTED)
+            # 2026-10-02 江楠居中放大口径（同黑块）：标签与"数值+单位"组
+            # 各自整组水平居中；数值 24pt 放大档（超宽降回 16pt 下限）。
+            # 标签（muted 8.5pt，居中）
+            self.text_centered(blk_cx, M["cell_label_cy"] + dy + 10.4,
+                               label, F_CN_REG, 8.5, T.MUTED)
 
             # 数值
             if value == D.MISSING:
-                self.text_inkc(T.RIGHT_COL_X + pad, M["cell_num_cy"] + dy,
-                               value, F_CN_REG, 16.0, T.MUTED)
+                self.text_inkc(blk_cx, M["cell_num_cy"] + dy + 10.9, value,
+                               F_CN_REG, 18.0, T.MUTED)
             else:
-                size = 20.56
+                size = 24.0
                 m = ink_mm(F_LATIN_HEAVY, size, value)
-                while m and m["w"] > T.RIGHT_COL_W - pad - 2.0 and size > 16.0:
+                while m and m["w"] > blk_max_w and size > 16.0:
                     size -= 0.5
                     m = ink_mm(F_LATIN_HEAVY, size, value)
-                self.text_inkc(T.RIGHT_COL_X + pad, M["cell_num_cy"] + dy,
-                               value, F_LATIN_HEAVY, size, T.INK)
+                usize = 10.5
+                um = ink_mm(F_LATIN_MED, usize, unit) if unit else None
+                uw = ((um["w"] if um else 0.0) + M["blk_unit_gap"]) \
+                    if unit else 0.0
+                vw = m["w"] if m else 0.0
+                while unit and (vw + uw) > blk_max_w and size > 16.0:
+                    size -= 0.5
+                    m = ink_mm(F_LATIN_HEAVY, size, value)
+                    vw = m["w"] if m else 0.0
+                gx = blk_cx - (vw + uw) / 2.0
+                self.text_inkb(gx, M["cell_num_cy"] + dy + 10.9, value,
+                               F_LATIN_HEAVY, size, T.INK)
                 if unit:
-                    # 单位紧贴数值墨迹右沿（同黑块规则）；字重 Medium（小标签档）
-                    ux = T.RIGHT_COL_X + pad + (m["w"] if m else 0.0) \
-                        + M["blk_unit_gap"]
-                    self.text_inkc(ux, M["cell_unit_cy"] + dy, unit,
-                                   F_LATIN_MED, 9.45, T.MUTED)
+                    self.text_inkb(gx + vw + M["blk_unit_gap"],
+                                   M["cell_num_cy"] + dy + 10.9, unit,
+                                   F_LATIN_MED, usize, T.MUTED)
 
         # ---- Ellylife 变体：右栏底部 Ellylife Logo（高 4.2mm）----
         if sku.is_ellylife:
