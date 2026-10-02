@@ -141,9 +141,19 @@ SKU_IMAGES = {
 }
 
 # C 级"待补重拍"名单（江楠 2026-09-29 锁定）：即使图库有图也不入册。
-# 2026-10-01 经理解禁：P12（江楠 09-30 指认）、J1D、CR208（江楠 09-30 06:30 指认），
-# 其余三个保持锁定。
-C_GRADE_MODELS = {"PBK05", "LEST-C2", "V9"}
+# 2026-10-01 经理解禁：P12（江楠 09-30 指认）、J1D、CR208（江楠 09-30 06:30 指认）。
+# 2026-10-02 第二轮（江楠补拍资料到齐，见《补充图片核对报告》）：LEST-C2（733²）、
+# V9（800×1000）、PBK05（1600²）全部解禁入册；**名单清零** —— 册内不再有
+# "有图不印"的型号。低分辨率图由下面的 dpi 守护控制摆放尺寸。
+C_GRADE_MODELS = set()
+
+# 低分图 dpi 守护：单图页（M2/M2-MERGED）图框上限 mm —— 按"最小边
+# 300dpi 等效物理尺寸"封顶（新图 733²/800×1000 → 62/68mm < 100mm 图框），
+# 保证印刷版有效 dpi ≥300，不铺满幅。数值 = 原文件边长/300*25.4 向下取整。
+DPI_GUARD = {
+    "LEST-C2": 62.0,
+    "V9": 68.0,
+}
 
 # 每型号选用哪张图（主图文件名 → v6「现有主图文件」列里打头的一张）。
 # 依据：白底/正面优先（M2 版式是白底单件位），组合图/带 logo 的场景图不用。
@@ -163,7 +173,9 @@ PICKED_MAIN = {
     # 合并组：取组内代表配置的白底/正面图（代表行 = 配置1）
     "CR208": "a5e6cbdc2ae044e2ad19057b1230b6c3.png",      # C 级（占位，不入册）
     "AW-2": "8a83699bc8234a12a4e4bbbcb1292f5b.jpeg",      # AW-02-1 白底 2000px
-    "LEST-C2": "dce649003ec54edcb79ea6a91f064778.png",    # C 级（占位，不入册）
+    "LEST-C2": "dce649003ec54edcb79ea6a91f064778.png",    # 733² 主机（10-02 解禁，62mm 框）
+    "V9": "71o7iwPzixL._SL1000_.jpg",                      # 800×1000（10-02 解禁，68mm 框）
+    "PBK05": "B0H2989YKP.MAIN.png",                        # 1600²（10-02 解禁，图框不变）
 }
 
 # 同型号双色对比页（M3 变体页）每色的主图：`(型号, 色号) → 图库文件名`。
@@ -321,14 +333,16 @@ def _render_into(c, e, v):
         return M2Page(c, e.index, bleed=bleed,
                       optimize_images=v["optimize"]).render(
                           sku, img, view=view,
-                          images=resolve_multi(sku.model) or None)
+                          images=resolve_multi(sku.model) or None,
+                          box_cap=DPI_GUARD.get(sku.model))
     if e.kind == PM.M2_MERGED:
         sku = e.rows[0]
         img, view = resolve_image(sku.model, sku=sku)
         return M2MergedPage(c, e.index, bleed=bleed,
                             optimize_images=v["optimize"]).render(
                                 e.rows, img, view=view,
-                                images=resolve_multi(sku.model) or None)
+                                images=resolve_multi(sku.model) or None,
+                                box_cap=DPI_GUARD.get(sku.model))
     if e.kind == PM.M3:
         a, b = e.rows
         colors = getattr(e, "colors", None)

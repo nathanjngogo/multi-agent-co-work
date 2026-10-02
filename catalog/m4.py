@@ -51,6 +51,12 @@ CERT_DESC = [
     ("PSE", "日本电气用品安全"),
 ]
 
+# 交付口径（江楠 2026-10-02 回填，《第九张：交期与付款》）。
+LEADTIME = {"sample": "30", "mass": "45", "payment": "现金"}
+# 目标市场与插头制式（《第十张》）：北美·美规·110V / 欧洲·欧规·240V / 日本·日规·110V
+MARKETS = [("北美", "美规", "110V"), ("欧洲", "欧规", "240V"),
+           ("日本", "日规", "110V")]
+
 # OEM/ODM 能力（§二 M4「OEM/ODM 能力（4 条）」）。
 # 第 3 条 MOQ 的数值取自 v6「MOQ」列（**动态**），故此处用占位符。
 OEM_ITEMS = [
@@ -103,14 +109,15 @@ class M4Page(Page):
     def lead(self):
         s = self.summary
         if self.variant == "index":
-            return (f"本册收录 {s.get('spu', 0)} 个 SPU、"
+            return (f"本册收录 {s.get('spu', 0)} 个 SPU（口径：型号×颜色×插头制式）、"
                     f"{s.get('sku', 0)} 个在售 SKU，"
                     f"分 {len(s.get('categories', []))} 个品类；"
                     f"单品页 {s.get('spu_pages', 0)} 页，"
                     f"系列对比页 {s.get('m3_pages', 0)} 页。")
         if self.variant == "brand":
             return ("Hearten 专注家用清洁电器与健身周边，产品覆盖无线吸尘器、"
-                    "洗地机、蒸汽清洗机、布艺清洗机与瑜伽用品。全线通过 "
+                    "洗地机、蒸汽清洗机、布艺清洗机与瑜伽用品。Ellylife 为 "
+                    "Hearten 旗下子品牌，经营瑜伽与健身周边。全线通过 "
                     "CE / FCC / UL / ETL / PSE 认证，面向北美、欧洲与日本市场。")
         if self.variant == "cert":
             return ("全线产品按目标市场完成相应安全与电磁兼容认证，"
@@ -140,6 +147,7 @@ class M4Page(Page):
             self.draw_oem_capability(from_y=M["oem_h3_ink_top"])
         elif self.variant == "service":
             self.draw_logistics_map()
+            self.draw_service_facts()
         elif self.variant == "index":
             self.draw_index_content()
         return y
@@ -181,7 +189,7 @@ class M4Page(Page):
             self.text_inkleft(M["oem_x"],
                               M["oem_row1_top"] + i * M["oem_pitch"]
                               + (im["h"] if im else 3.4),
-                              "— " + text, F_CN_REG, M["oem_size"], T.BODY)
+                              "· " + text, F_CN_REG, M["oem_size"], T.BODY)
 
     # ---- 目录/索引页主体：数据驱动全 SPU → 页码表 ----
     def draw_index_content(self, entries=None):
@@ -247,6 +255,24 @@ class M4Page(Page):
             f"目录索引 {n} 条单列（页码升序，行高 {row_h:.2f}mm，"
             f"末行墨迹下沿 {M['idx_top'] + n * row_h:.1f}mm 贴合内容）")
 
+    # ---- P.05 交付事实两行（付款 / 目标市场，江楠 2026-10-02）----
+    def draw_service_facts(self):
+        """地图下方空带里的两行交付事实：付款与目标市场制式。
+
+        位置：地图裁剪框底 y=94.96 与图例线之间不放内容（图例在 98.37），
+        两行落在左栏正文带（x=11.08 起，9pt），不压红竖线（104mm）。
+        """
+        y = 158.0
+        mk = " · ".join(f"{m}（{p} {v}）" for m, p, v in MARKETS)
+        for text in (f"目标市场：{mk}",
+                     f"付款方式：{LEADTIME['payment']}；起订 "
+                     f"{self._moq()} pcs"):
+            y_self = self.draw_paragraph(11.08, y, text, F_CN_REG, T.FS_BODY,
+                                         T.BODY, 92.0, T.MT["m4"]["lead_line_h"],
+                                         max_lines=2)
+            y = y_self + 5.6
+        self.notes.append("P.05 交付事实：市场三行 + 付款/起订（江楠 10-02）")
+
     # ---- 服务与物流页主体：矢量物流地图（v3：撤箱规表）----
     def draw_logistics_map(self):
         """航线示意：矢量世界地图 + China 高亮 + 三条航线 + 起运/目的港。
@@ -278,9 +304,13 @@ class M4Page(Page):
             return [("认证项目", str(len(CERT_DESC)), ""),
                     ("覆盖市场", str(3), ""),
                     ("起订量", self._moq(), "pcs")]
-        return [("装箱品类", str(len(s.get("categories", []))), ""),
-                ("起订量", self._moq(), "pcs"),
-                ("交付口径", "待补", "")]
+        # 交付口径（江楠 2026-10-02《第九张 交期与付款》）：打样 30 天 /
+        # 量产 45 天（1000–20000pcs 同档）/ 付款现金 / 起订 1000 pcs。
+        # 单位一律拉丁（"天" 会被右栏单位档的拉丁字体顶替成缺字形）：
+        # 时间单位并进标签，用 §1.3 的括号写法。
+        return [("起订量", self._moq(), "pcs"),
+                ("打样周期（天）", LEADTIME["sample"], ""),
+                ("量产交期（天）", LEADTIME["mass"], "")]
 
     def _moq(self):
         for s in self.rows:

@@ -81,6 +81,11 @@ class M2MergedPage(M2Page):
 
         # 产品图（收窄让位）
         box = MERGED["product_box"]
+        cap = getattr(self, "_box_cap", None)
+        if cap and not images and box > cap:
+            self.notes.append(f"dpi 守护：图框 {box:g} → {cap:g}mm"
+                              f"（低分图保 ≥300dpi，不铺满幅）")
+            box = cap
         img_cx = (T.MID_X0 + T.MID_X1) / 2.0
         cy = MERGED["product_cy"]
         if images and len(images) >= 2:
@@ -224,10 +229,11 @@ class M2MergedPage(M2Page):
 
     # -------------------------------------------------------------- 整页
     def render(self, members, image_path=None, view="FRONT", caption=None,
-               logo_path=None, images=None):
+               logo_path=None, images=None, box_cap=None):
         """members = 同一「入册页组」的全部 v6 行（有序）。"""
         self.members = list(members)
         sku = self.rep()
+        self._box_cap = box_cap
         self.draw_red_rule()
         self.draw_left(sku, view)
         self.draw_middle(sku, image_path, view, caption, images=images)

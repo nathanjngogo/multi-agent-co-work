@@ -95,7 +95,12 @@ class TestPageOrderEngine(unittest.TestCase):
             if e.kind != PM.M3:
                 continue
             self.assertEqual(len(e.rows), 2, f"{e.page_no} 应为两两对比")
-            self.assertNotEqual(e.rows[0].model, e.rows[1].model)
+            if getattr(e, "colors", None):
+                # 同型号双色对比页（v3：P.08 A7 红/蓝、P.14 P16 绿/紫）
+                self.assertEqual(e.rows[0].model, e.rows[1].model)
+                self.assertNotEqual(e.colors[0], e.colors[1])
+            else:
+                self.assertNotEqual(e.rows[0].model, e.rows[1].model)
             for s in e.rows:
                 self.assertIn(id(s), home, f"{e.page_no} 引用了无单品页的型号")
 
@@ -115,9 +120,9 @@ class TestPageOrderEngine(unittest.TestCase):
         """逐页比对工单裁决的 32P 构成（型号序列）。"""
         want = [
             "—", "—", "—", "—", "—",
-            "A7", "LP005-White", "A7/LP005-White",
+            "A7", "LP005-White", "A7",       # P.08 A7 红/蓝（同型号双色）
             "P11", "P12", "P11/P12",
-            "P16", "V16", "P16/V16",
+            "P16", "V16", "P16",             # P.14 P16 绿/紫（同型号双色）
             "J1D", "CR208", "AW-2",
             "GT3", "BVC-T8", "GT3/BVC-T8",
             "LEST-C2", "V9", "LEST-C2/V9",
@@ -136,10 +141,10 @@ class TestPageOrderEngine(unittest.TestCase):
 
     # ---------------------------------------------------- 统计与目录
     def test_catalog_summary_matches_prototype(self):
-        """M4 数据块数字（打样页写死的 23/108/19）在 v6 下由数据算出且一致。"""
+        """M4 数据块数字：口径 C（江楠 10-02）SPU=83、v7 SKU 合计=101、页数 19。"""
         s = PM.catalog_summary(self.entries, self.rows)
-        self.assertEqual(s["spu"], 23)
-        self.assertEqual(s["sku"], 108)
+        self.assertEqual(s["spu"], 83)
+        self.assertEqual(s["sku"], 101)
         self.assertEqual(s["spu_pages"], 19)
         self.assertEqual(s["m3_pages"], 7)
         self.assertEqual(s["total_pages"], 32)
@@ -189,8 +194,10 @@ class TestV6DataContract(unittest.TestCase):
         cls.v5path = os.path.join(ROOT, "input", "SKU素材收集模板_v5.csv")
 
     def test_authoritative_version_is_v6(self):
-        """权威版钉死 v6（引用单点）。"""
-        self.assertEqual(D.CSV_NAME, "SKU素材收集模板_v6.csv")
+        """权威版钉死 **v7**（2026-10-02 江楠回填；引用单点）。"""
+        self.assertEqual(D.CSV_NAME, "SKU素材收集模板_v7.csv")
+        self.assertTrue(os.path.exists(
+            os.path.join(ROOT, "input", "SKU素材收集模板_v7.csv")))
         self.assertTrue(os.path.exists(self.v6path))
 
     def test_v6_differs_from_v5_only_in_cert_column(self):

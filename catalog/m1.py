@@ -48,6 +48,18 @@ BACK_INFO1 = "Hearten ｜ 清洁电器"
 BACK_INFO2 = "Ellylife ｜ 瑜伽与健身周边"
 BACK_NOTE = "本画册所载参数以实物与规格书为准"
 
+# 封底联系方式（江楠 2026-10-02《第一张》原文；留空项**不编造**：
+# 官网/电话/邮箱/WhatsApp/店铺/展会均空 → 版面只印填了的字段）
+CONTACT_CN = [
+    ("公司", "福州同心互联科技有限公司（成立于 2013）"),
+    ("英文", "Fuzhou Tongxin Internet Technology Co., Ltd."),
+    ("地址", "福建省闽侯县上街镇科技东路12、16、18号（华建大厦）"),
+    ("英文地址", "Room 1303 / Room 1406, Building 2, No. 12, 16, 18 "
+                 "Keji East Road, Shangjie Town, Minhou County, Fuzhou, "
+                 "Fujian, China"),
+    ("联系", "周长辉 · 总经理"),
+]
+
 BRANDS = [
     # (键, 显示名, 定位句)
     ("hearten", "Hearten", "主品牌 · 清洁电器"),
@@ -158,9 +170,29 @@ class M1Page(Page):
         self.hairline_top(M["foot_rule_x0"], M["foot_rule_y"],
                           M["foot_rule_x1"] - M["foot_rule_x0"])
         if dual:
+            self.draw_contact()
             self.draw_dual_logos()
         else:
             self.draw_single_bottom()
+
+    def draw_contact(self):
+        """封底联系方式块（title 区与底部细线之间的空带，左栏 x=11.08）。
+
+        只排《第一张》填了的字段；英文地址按行宽自动折行。9pt body、
+        行高 5.2mm，6 项 ≤5 行折行刚好落在 y≈138..166 空带内，不压 168 细线。
+        """
+        y = 140.8
+        nlines = 0
+        for label, text in CONTACT_CN:
+            s = f"{label}：{text}"
+            n = len(F.wrap_cjk(s, F_CN_REG, 8.6, 112.0))
+            y_end = self.draw_paragraph(11.08, y, s, F_CN_REG, 8.6,
+                                        T.MUTED, 112.0, 4.55,
+                                        max_lines=None)
+            nlines += n
+            y = y_end + 4.55 + 0.65
+        self.notes.append(f"封底联系方式 {len(CONTACT_CN)} 项 {nlines} 行"
+                          f"（江楠 10-02 原文，留空项不印）")
 
     def draw_single_bottom(self):
         """封面底部：左下出品说明 + 右下 Ellylife 标（规范 §二 M1）。"""

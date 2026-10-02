@@ -19,8 +19,11 @@ import re
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-# 权威版钉死 v6（MARS-9 预检裁决）；引用必须单点。
-CSV_NAME = "SKU素材收集模板_v6.csv"
+# 权威版：**v7**（2026-10-02 江楠回填《待补资料填写表》后的版本；v6 及更早仅留痕）。
+# v7 相对 v6：新增三列「吸力kPa / 续航min / 配色数」，并把江楠回填的
+# 噪音 / 净重 / 功率文案 / SKU 数 / 电机类型 / 电压写法逐格更新（94 处，
+# 见 `make_v7.py` 的改动日志）。引用必须单点。
+CSV_NAME = "SKU素材收集模板_v7.csv"
 
 MISSING = "待补"
 
@@ -73,6 +76,10 @@ class Sku:
         self.weight_kg = row["净重/毛重 kg"].strip()
         self.voltage = row["电压制式"].strip()
         self.certs_field = row["持证清单确认（默认CE/FCC/UL/ETL/PSE，如不符请改）"].strip()
+        # v7 新增的额定值列（空则回落卖点文案正则，见 _suction / _runtime）
+        self.suction_kpa = (row.get("吸力kPa") or "").strip()
+        self.runtime_min = (row.get("续航min") or "").strip()
+        self.color_count = (row.get("配色数") or "").strip()
         self.carton_mm = row["外箱尺寸 mm"].strip()
         self.carton_kg = row["单箱毛重 kg"].strip()
         self.per_carton = row["每箱数量"].strip()
@@ -180,15 +187,13 @@ class Sku:
         """
         cat = self.category
         if cat == "吸尘器":
-            return [self._from_points("吸力", r"([\d.]+)\s*kPa", "kPa"),
-                    self._runtime()]
+            return [self._suction(), self._runtime()]
         if cat == "蒸汽清洗机":
             # v5 原文 "105℃高温蒸汽…"；单位按打样惯例渲染为 °C
             return [self._from_points("蒸汽温度", r"([\d.]+)\s*[℃°]", self._temp_unit()),
                     self._from_points("水箱容量", r"([\d.]+)\s*ml", "ml")]
         if cat in ("洗地机", "布艺清洗机"):
-            return [self._from_points("吸力", r"([\d.]+)\s*kPa", "kPa"),
-                    self._noise()]
+            return [self._suction(), self._noise()]
         if cat == "瑜伽垫":
             # 黑块已放厚度，白格放尺寸 + 净重（与打样页 TBK06 一致）
             return [self._dims(), self._weight()]
@@ -197,6 +202,18 @@ class Sku:
         return [self._dims(), self._weight()]
 
     # -------- 白格取值助手 --------
+    def _suction(self):
+        """吸力（kPa）：**优先取 v7 额定列「吸力kPa」**，空才回落卖点正则。
+
+        额定值与营销文案必须分开供数：文案里的数字属于宣传口径，
+        印刷件的规格位只能印额定值（江楠 2026-10-02 裁决）。
+        """
+        if not is_missing(self.suction_kpa):
+            m = re.search(r"([\d.]+)", self.suction_kpa)
+            if m:
+                return ("吸力", m.group(1), "kPa", False)
+        return self._from_points("吸力", r"([\d.]+)\s*kPa", "kPa")
+
     def _from_points(self, label, pattern, unit, prefer=()):
         """从卖点文案里取出**明确写出**的数值主参数。"""
         for p in self.points:
@@ -212,7 +229,11 @@ class Sku:
         return "°C"
 
     def _runtime(self):
-        """续航：只认卖点里明确写出的「N 分钟」。"""
+        """续航（min）：**优先取 v7 额定列「续航min」**，空才回落卖点正则。"""
+        if not is_missing(self.runtime_min):
+            m = re.search(r"([\d.]+)", self.runtime_min)
+            if m:
+                return ("续航", m.group(1), "min", False)
         for p in self.points:
             if not p:
                 continue
@@ -290,11 +311,12 @@ class Sku:
             s = s.replace(" ", "").replace("x", "×").replace("X", "×")
             s = re.sub(r"^(\d[\d.]*(?:×\d[\d.]*)+)(cm|mm)", r"\1 \2", s)
             parts.append(s)
-        # 净重
-        if is_missing(self.weight_kg):
+        # 净重（v6 有 "— / —（表内为空）" 这种写法：整串不算缺、分量才是缺，
+        # 故这里对**净重分量**单独判缺，避免渲染成 "— kg"）
+        net = self.weight_kg.split("/")[0].strip().replace("约", "").strip()
+        if is_missing(net):
             parts.append(MISSING)
         else:
-            net = self.weight_kg.split("/")[0].strip().replace("约", "").strip()
             parts.append(net if net.endswith("kg") else f"{net} kg")
         if self.is_electric:
             # 功率
@@ -304,7 +326,11 @@ class Sku:
                 parts.append(MISSING)
             else:
                 v = re.sub(r"[（(].*?[)）]", "", self.voltage).strip()
-                v = v.replace("~", "").replace(" ", "")
+                v = v.replace("~", "")
+                # 电压串规范化（江楠 10-02）：`100-240V50/60Hz` → `100-240V 50/60Hz`
+                # 全册统一在 V 与 Hz 之间留一个空格（原来是 replace(" ","") 把空格吃掉了）。
+                v = re.sub(r"\s+", " ", v).strip()
+                v = re.sub(r"(?<=[Vv])(?=[\d])", " ", v)
                 parts.append(v)
         else:
             # 非电器：材质（替代不适用的功率/电压）
@@ -482,9 +508,16 @@ class Sku:
         if any_non_electric:
             rows.append(("厚度", self.thickness_display()))
             rows.append(("材质", self.material_plain()))
-        rows.append(("整机尺寸", self.dims_display()))
-        rows.append(("整机净重", self.net_weight_display()))
-        rows.append(("噪音", self.noise_display()))
+        # 非电器款（瑜伽垫/瑜伽砖）没有「整机」概念，列头写「尺寸 / 净重」；
+        # 也没有噪音参数 —— 江楠 2026-10-02：P.27/P.30 删噪音行（模板残留字段）。
+        if self.is_electric:
+            rows.append(("整机尺寸", self.dims_display()))
+            rows.append(("整机净重", self.net_weight_display()))
+        else:
+            rows.append(("尺寸", self.dims_display()))
+            rows.append(("净重", self.net_weight_display()))
+        if any_electric:
+            rows.append(("噪音", self.noise_display()))
         rows.append(("在售 SKU", self.sku_count_display()))
         return rows
 
@@ -561,11 +594,31 @@ def group_members(rows, page_key):
     return out
 
 
+# 口径 C（江楠 2026-10-02 勾选）：**SPU = 型号 × 颜色 × 插头制式**。
+# 插头制式取册内三大目标市场（北美·美规 / 欧洲·欧规 / 日本·日规）= 3 种；
+# 非电器品类（瑜伽垫 / 瑜伽砖）不涉插头制式，按 1 计。
+# 颜色数取 v7「配色数」列；同一型号多行（CR208 有刷/无刷、AW-2 四配置）
+# 按型号归并取最大值 —— 同型号共用一套配色，逐行相加会重复计数。
+PLUG_TYPES = 3
+
+
+def spu_count_caliber_c(rows):
+    """口径 C 的 SPU 计数（型号 → 颜色数 → × 插头制式）。"""
+    per_model = {}
+    for s in rows:
+        n = s.color_count if (s.color_count or "").isdigit() else 1
+        n = int(n)
+        factor = PLUG_TYPES if s.is_electric else 1
+        key = s.model
+        per_model[key] = max(per_model.get(key, 0), n * factor)
+    return sum(per_model.values())
+
+
 def catalog_stats(rows):
     """M4 右栏数据块的权威口径。
 
-    打样页 M4 写的是 SPU 23 / SKU 108 / SPU PAGES 19。前两项**由数据算出**，
-    不写死：SPU = 清单行数；SKU = 「在售SKU数」列求和（v6 实测 108）。
+    **SPU 按口径 C 计**（江楠 2026-10-02 裁决：型号 × 颜色 × 插头制式），
+    SKU = 「在售SKU数」列求和（v7 实测 101）。
     第三项「单品页数」= 独立单品页 + 合并组页数（= 册子里 M2 页的页数），
     由 page_map 给出，故不在此统计。
     """
@@ -587,8 +640,10 @@ def catalog_stats(rows):
         if c and c not in cats:
             cats.append(c)
     return {
-        "spu": len(rows),
+        "spu": spu_count_caliber_c(rows),   # 口径 C
+        "spu_models": len(rows),            # 型号数（清单行数），仅内部参考
         "sku": total_sku,
+        "plug_types": PLUG_TYPES,
         "brands": brands,
         "categories": cats,
         "models": [s.model for s in rows],

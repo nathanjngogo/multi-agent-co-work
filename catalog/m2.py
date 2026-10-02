@@ -180,6 +180,13 @@ class M2Page(Page):
 
         # ---- 产品图：中栏居中，垂直居中偏上（印刷宽 ≥100mm §二 M2）----
         box = M["product_box"]
+        # dpi 守护：低分图单页按"最小边 300dpi 物理尺寸"封顶图框（build.DPI_GUARD）
+        cap = getattr(self, "_box_cap", None)
+        if cap and not images:
+            if box > cap:
+                self.notes.append(f"dpi 守护：图框 {box:g} → {cap:g}mm"
+                                  f"（低分图保 ≥300dpi，不铺满幅）")
+                box = cap
         img_cx = (T.MID_X0 + T.MID_X1) / 2.0
         if images and len(images) >= 2:
             # 同页多色：不新增页码，图位切格
@@ -346,7 +353,8 @@ class M2Page(Page):
 
     # -------------------------------------------------------------- 整页
     def render(self, sku, image_path, view="FRONT", caption=None,
-               logo_path=None, images=None):
+               logo_path=None, images=None, box_cap=None):
+        self._box_cap = box_cap
         self.draw_red_rule()
         self.draw_left(sku, view)
         self.draw_middle(sku, image_path, view, caption, images=images)
