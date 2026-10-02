@@ -194,8 +194,20 @@ _DIR_ALIAS = {
 }
 
 
+def _clean_override(filename):
+    """水印清洗件（assets/clean/<同名>）优先——江楠 10-02 删左上角 Hearten 水印。
+
+    只改在用图的入册副本；GALLERY_ROOT 原件保持不动。
+    """
+    p = os.path.join(ROOT, "assets", "clean", filename)
+    return p if os.path.exists(p) else None
+
+
 def _find_in_gallery(filename):
     """按文件名在 GALLERY_ROOT 下检索（唯一权威定位方式）。"""
+    c = _clean_override(filename)
+    if c:
+        return c
     if not GALLERY_ROOT or not os.path.isdir(GALLERY_ROOT):
         return None
     for dirpath, _dirs, files in os.walk(GALLERY_ROOT):
@@ -255,7 +267,7 @@ def resolve_multi(model, root=ROOT):
     """同页多色图列表 [(绝对路径, 色款标签), ...]；无则空表。"""
     out = []
     for rel, label in MULTI_MAIN.get(model, ()):
-        p = os.path.join(root, rel)
+        p = _clean_override(os.path.basename(rel)) or os.path.join(root, rel)
         if os.path.exists(p):
             out.append((p, label))
     return out

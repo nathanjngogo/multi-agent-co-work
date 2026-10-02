@@ -253,10 +253,21 @@ class M2Page(Page):
         widths = [F.string_width_mm(s, F_LATIN_REG if lat else F_CN_REG, size)
                   for s, lat in segs]
         x = cx - sum(widths) / 2.0
+        # 2026-10-02 江楠「每个产品图下方的 kg 都没有对齐」：原实现每段各自
+        # 按"墨迹下沿"落位——kg/pcs 这类带下伸部的单位（below≈0.52mm）与
+        # 数字（below≈0.02mm）下沿对齐 = 基线不齐，视觉上 kg 悬在半空。
+        # 改为行内共享基线：以首个非空段为基准，各段墨迹下沿 = 基准下沿 +
+        # (该段 below − 基准 below)，下伸部自然挂到基线以下（印刷口径）。
+        base = None
         for (s, lat), w in zip(segs, widths):
             font = F_LATIN_REG if lat else F_CN_REG
+            m = ink_mm(font, size, s)
+            if base is None and s.strip() and m:
+                base = m["below"]
+            b = base if base is not None else (m["below"] if m else 0.0)
             color = T.MUTED if s.strip() == D.MISSING else T.BODY
-            self.text_inkb(x, ink_bottom, s, font, size, color)
+            self.text_inkb(x, ink_bottom + (m["below"] - b) if m else ink_bottom,
+                           s, font, size, color)
             x += w
 
     # -------------------------------------------------------------- 右栏
@@ -311,7 +322,10 @@ class M2Page(Page):
             gx = blk_cx - (vw + uw) / 2.0
             self.text_inkb(gx, 34.0, val, F_LATIN_HEAVY, nsize, T.WHITE)
             if unit:
-                self.text_inkb(gx + vw + M["blk_unit_gap"], 34.0, unit,
+                # 单位与数值**共享基线**（江楠 kg 对齐口径）：单位墨迹下沿
+                # = 数值下沿 + (单位 below − 数值 below)，g/p 下伸部挂到基线下。
+                ub = um["below"] - (m["below"] if m else 0.0) if um else 0.0
+                self.text_inkb(gx + vw + M["blk_unit_gap"], 34.0 + ub, unit,
                                F_LATIN_MED, usize, T.ACCENT)
 
         # ---- 白底格：2 个实测主参数 + 起订量 ----
@@ -353,8 +367,10 @@ class M2Page(Page):
                 self.text_inkb(gx, M["cell_num_cy"] + dy + 10.9, value,
                                F_LATIN_HEAVY, size, T.INK)
                 if unit:
+                    # 单位与数值共享基线（同黑块口径）
+                    ub = um["below"] - (m["below"] if m else 0.0) if um else 0.0
                     self.text_inkb(gx + vw + M["blk_unit_gap"],
-                                   M["cell_num_cy"] + dy + 10.9, unit,
+                                   M["cell_num_cy"] + dy + 10.9 + ub, unit,
                                    F_LATIN_MED, usize, T.MUTED)
 
         # ---- Ellylife 变体：右栏底部 Ellylife Logo（高 4.2mm）----
