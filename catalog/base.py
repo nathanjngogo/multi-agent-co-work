@@ -503,13 +503,12 @@ class Page:
         for cert in certs:
             art = CM.artwork_path(cert) if graphics else None
             if art:
-                # 官方图形：按墨迹框等比置入，高度取框高与法定下限的大值
-                need = max(h, CM.min_height_mm(cert))
-                box = self.logo_by_ink_height(
-                    art, need, ink_left=x, ink_top=y + (h - need) / 2.0)
-                w = box[2] if box else (need * 1.4)
-                w += 2 * M["badge_pad_x"]
-                x += w + M["badge_gap"]
+                # 官方图形：**等面积统一定标**（badge_box），行/列内按
+                # 框高带垂直居中；长宽比法定不得拉伸。
+                bw, bh = CM.badge_box(cert) or (h * 1.2, h)
+                self.logo_by_ink_height(
+                    art, bh, ink_left=x, ink_top=y + (h - bh) / 2.0)
+                x += bw + M["badge_gap"]
                 continue
             # 文本模式（无官方图件，或本页未开启图形模式）
             m = ink_mm(F_LATIN_MED, size, cert)

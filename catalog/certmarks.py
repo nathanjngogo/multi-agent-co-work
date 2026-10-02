@@ -106,6 +106,44 @@ def max_width_mm(code):
     return 0.0
 
 
+# ---------------------------------------------------------------- 统一定标
+# 江楠 2026-10-02（第三轮 P.04 圈注"图标大小要相同"）：等高定标下 CE
+# （横宽 1.40:1）墨迹面积≈69.9mm²、UL（竖高 0.75:1）≈37.5mm²，差近 2 倍，
+# 视觉就是"大小不同"。官方标长宽比是发布方口径**不得拉伸**，能统一的是
+# 外接框：五标墨迹放进**同一 7.5×7.5mm 方框**（等比取大者封顶），
+# 外接尺寸完全相同；方框内长宽比保持法定原样。
+BADGE_BOX_MM = 7.5
+
+
+def ink_aspect(code):
+    """该标官方图件的**墨迹**宽高比（w/h）；无图件返回 None。"""
+    from PIL import Image
+    p = artwork_path(code)
+    if not p:
+        return None
+    from .base import ink_box_fraction
+    bx = ink_box_fraction(p)
+    w, h = Image.open(p).size
+    iw, ih = (bx[2] - bx[0]) * w, (bx[3] - bx[1]) * h
+    return iw / ih if ih else None
+
+
+def badge_box(code):
+    """统一方框定标：返回 (ink_w, ink_h) mm，两者都被 BADGE_BOX_MM 封顶；
+    无图件返回 None（调用方走文本）。CE 的 5mm 法定最小高由封顶方式
+    自然守住（7.5/1.40=5.36mm > 5mm）。"""
+    asp = ink_aspect(code)
+    if not asp:
+        return None
+    if asp >= 1.0:
+        w = BADGE_BOX_MM
+        h = w / asp
+    else:
+        h = BADGE_BOX_MM
+        w = h * asp
+    return w, h
+
+
 def status_of(code):
     return (load_manifest().get(code) or {}).get("status", "pending")
 
