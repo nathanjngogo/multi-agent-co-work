@@ -360,6 +360,22 @@ class Page:
                          place_w * mm, place_h * mm, mask="auto")
         return (file_x + place_w * bx0, file_top + place_h * by0, ink_w, h_ink_mm)
 
+    def _place_ink_box(self, path, ink_left, ink_top, ink_w, ink_h):
+        """把图件的**墨迹框**按 (ink_w, ink_h) 双轴铺放（允许非等比）。
+
+        仅方框模式（certmarks.BADGE_SQUARE，江楠 2026-10-02 裁决）使用；
+        等比一律走 logo_by_ink_height。
+        """
+        from reportlab.lib.utils import ImageReader
+        bx0, by0, bx1, by1 = ink_box_fraction(path)
+        img = ImageReader(path)
+        iw, ih = img.getSize()
+        place_w, place_h = ink_w / (bx1 - bx0), ink_h / (by1 - by0)
+        file_x = ink_left - place_w * bx0
+        file_top = ink_top - place_h * by0
+        self.c.drawImage(img, self.X(file_x), self.Y(file_top + place_h),
+                         place_w * mm, place_h * mm, mask="auto")
+
     # -------------------------------------------------------------- 混排
     def draw_mixed(self, x_ink_left, ink_bottom, text, latin_font, cn_font, size,
                    color, max_w=None, tracking=0.0):
@@ -503,11 +519,15 @@ class Page:
         for cert in certs:
             art = CM.artwork_path(cert) if graphics else None
             if art:
-                # 官方图形：**等面积统一定标**（badge_box），行/列内按
-                # 框高带垂直居中；长宽比法定不得拉伸。
+                # 官方图形：**统一方框定标**（CM.badge_box）。等比模式走
+                # logo_by_ink_height；方框模式（江楠 10-02「改」）双轴可能
+                # 非等比，直接按墨迹框铺放 (bw, bh)，行/列内垂直居中。
                 bw, bh = CM.badge_box(cert) or (h * 1.2, h)
-                self.logo_by_ink_height(
-                    art, bh, ink_left=x, ink_top=y + (h - bh) / 2.0)
+                if CM.BADGE_SQUARE:
+                    self._place_ink_box(art, x, y + (h - bh) / 2.0, bw, bh)
+                else:
+                    self.logo_by_ink_height(
+                        art, bh, ink_left=x, ink_top=y + (h - bh) / 2.0)
                 x += bw + M["badge_gap"]
                 continue
             # 文本模式（无官方图件，或本页未开启图形模式）

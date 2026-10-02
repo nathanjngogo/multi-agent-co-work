@@ -114,6 +114,13 @@ def max_width_mm(code):
 # 外接尺寸完全相同；方框内长宽比保持法定原样。
 BADGE_BOX_MM = 7.5
 
+# 2026-10-02 19:47 江楠对"图标大小要相同"的裁决：**方框模式** —— 五标
+# 非等比塞满同一个 7.5×7.5mm 正方（宽高完全相同）。注意：官方标的法定
+# 口径是等比复制（本模块文档"等比缩放"条），方框模式会轻微拉伸 UL/ETL
+# 一类竖高标；江楠以产品经理身份指认视觉优先，此为**有记录的例外授权**。
+# 图件原件未动；BADGE_SQUARE=False 即整体回退等比。
+BADGE_SQUARE = True
+
 
 def ink_aspect(code):
     """该标官方图件的**墨迹**宽高比（w/h）；无图件返回 None。"""
@@ -129,12 +136,18 @@ def ink_aspect(code):
 
 
 def badge_box(code):
-    """统一方框定标：返回 (ink_w, ink_h) mm，两者都被 BADGE_BOX_MM 封顶；
-    无图件返回 None（调用方走文本）。CE 的 5mm 法定最小高由封顶方式
-    自然守住（7.5/1.40=5.36mm > 5mm）。"""
-    asp = ink_aspect(code)
-    if not asp:
+    """统一方框定标：返回 (ink_w, ink_h) mm；无图件返回 None（走文本）。
+
+    * 等比模式（BADGE_SQUARE=False）：两轴都被 BADGE_BOX_MM 封顶，长宽比
+      法定原样（CE 5mm 法定最小高由封顶方式自然守住）。
+    * 方框模式（BADGE_SQUARE=True，江楠 10-02 裁决）：五标一律 (B, B) 正方，
+      视觉尺寸绝对一致（非等比，见 BADGE_SQUARE 注释）。
+    """
+    if ink_aspect(code) is None:
         return None
+    if BADGE_SQUARE:
+        return BADGE_BOX_MM, BADGE_BOX_MM
+    asp = ink_aspect(code)
     if asp >= 1.0:
         w = BADGE_BOX_MM
         h = w / asp
