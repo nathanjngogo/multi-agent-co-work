@@ -389,5 +389,14 @@ class M3Page(Page):
         headers = ([model_a or a.model, model_b or b.model]
                    if (model_a or model_b) else None)
         self.draw_table(a, b, rows, headers)
+        # 2026-10-02 江楠（"电器产品，每个都要放这几个标识"）：对比页展示的
+        # 也是电器在售矩阵，页底左栏同样挂官方认证徽章行（与 M2 单品页同
+        # 口径：统一 7.5mm 方框、等距、x 起点 11.01）。非电器（Ellylife 瑜伽
+        # 对比页 P.27/P.30）cert_list 为空 → 不挂，维持"认证不适用"口径。
+        certs = a.cert_list()
+        if certs:
+            self.draw_badges(certs, graphics=True)
+            self.notes.append(f"系列页认证徽章 {len(certs)} 项："
+                              + "/".join(certs))
         self.draw_footer()
         return self.notes
