@@ -90,7 +90,11 @@ class M2Page(Page):
         # ---- 认证徽章行（Ellylife 变体留空）----
         certs = sku.cert_list()
         if certs:
-            self.draw_badges(certs)
+            # 2026-10-02 江楠视觉口径（MARS-23 ①/②）：横向行从纯文本切到
+            # assets/certmarks/ 官方图形标，**统一标称高（badge_h 7.07mm）、
+            # 等比缩放（法定标不得拉伸变形）、等距**。无官方图的标自动
+            # 回落纯文本框（draw_badges 双模内置），不手绘。
+            self.draw_badges(certs, graphics=True)
             self.notes.append(f"认证徽章 {len(certs)} 项：" + "/".join(certs))
         else:
             self.notes.append("认证位留空（Ellylife 变体，瑜伽品类不适用）")
