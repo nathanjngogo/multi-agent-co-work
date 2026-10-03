@@ -384,10 +384,47 @@ class M4Page(Page):
                        F_CN_REG, pos_size, T.MUTED)
 
     # -------------------------------------------------------------- 整页
+    # ---- 中央产品画廊（P.03/P.04 中缝空白）----
+    # 2026-10-03 江楠「P.03 P.04需要补充用图片中间空白的部分」：红线与
+    # 右栏之间整幅中缝（x 110.5..243、y 40..172）原本是纯空白，补 2×2
+    # 产品矩阵：无线吸尘器 A7 / 洗地机 CR208（红）/ 蒸汽拖把 P12 /
+    # Ellylife 瑜伽垫 TBK06。全部白底无水印件（水印三张在 assets/clean，
+    # 这里不选它们，避免同一图在两页出现）；62mm 框内等比居中。
+    # 专用副本（assets/gallery/）——不复用主图文件名：webassets 的邮件版
+    # 降采样缓存按"文件名@dpi"键控，同一文件在 100mm 主图框与 62mm 画廊
+    # 框共用会互相污染（小尺寸先写 → 主图变糊）。副本限 1400px（62mm 框
+    # 300dpi 只需 732px，仍富余）。
+    GALLERY = [
+        "gal_a7.png",         # 无线吸尘器 A7（白底无水印）
+        "gal_cr208_red.png",  # 洗地机 CR208 红
+        "gal_p12.jpg",        # 蒸汽拖把 P12
+        "gal_tbk06.jpg",      # Ellylife 瑜伽垫 TPE-06
+    ]
+    GAL_TILE = 62.0
+    GAL_CX = (111.5 + 243.0) / 2.0     # 中缝水平中心（避开红线与右栏）
+    GAL_COL = 70.0                     # 列间距（62 框 + 8 缝）
+    GAL_CY1, GAL_ROW = 71.0, 70.0      # 首行中心 / 行间距
+
+    def _gallery_path(self, fname):
+        p = os.path.join(ASSETS, "gallery", fname)
+        return p if os.path.exists(p) else None
+
+    def draw_center_gallery(self):
+        for i, fname in enumerate(self.GALLERY):
+            p = self._gallery_path(fname)
+            if not p:
+                self.notes.append(f"P.03/04 画廊缺图 {fname}")
+                continue
+            cx = self.GAL_CX + (i % 2 - 0.5) * self.GAL_COL
+            cy = self.GAL_CY1 + (i // 2) * self.GAL_ROW
+            self.image_fit_top(p, cx, cy, self.GAL_TILE, self.GAL_TILE)
+
     def render(self, entries=None):
         # 目录页需要页序引擎的成果来做"SPU → 页码"映射
         self.entries = entries
         self.draw_red_rule()
+        if self.variant in ("brand", "cert"):
+            self.draw_center_gallery()
         self.draw_left()
         self.draw_right()
         return self.notes
